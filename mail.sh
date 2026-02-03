@@ -8,7 +8,7 @@ fi
 
 clear
 echo "======================================"
-echo " DEBIAN 10 MAIL SERVER INSTALLER - By FarizGD"
+echo " DEBIAN 10 MAIL SERVER INSTALLER"
 echo "======================================"
 echo
 echo "MASUKKAN DEBIAN 10 CD/DVD 1"
@@ -29,7 +29,7 @@ echo "Masukkan nama domain (contoh: fariz.com)"
 read DOMAIN
 
 if [ -z "$DOMAIN" ]; then
-  echo "Domain kosong. Ini pemborosan konfigurasi."
+  echo "Domain kosong. Konfigurasi nol nilai."
   exit 1
 fi
 
@@ -41,7 +41,7 @@ grep -q "$DOMAIN" /etc/hosts || echo "$HOSTIP $DOMAIN mail.$DOMAIN" >> /etc/host
 echo "[+] apt update"
 apt update
 
-echo "[+] Install paket mail & webmail"
+echo "[+] Install paket"
 DEBIAN_FRONTEND=noninteractive apt install -y \
 postfix dovecot-core dovecot-pop3d \
 apache2 php php-imap php-mbstring curl unzip telnet iproute2
@@ -92,14 +92,13 @@ mkdir -p /home/tamu/Maildir
 chown -R tamu:tamu /home/tamu/Maildir
 
 echo
-echo "[+] Konfigurasi Host-Only Network (VirtualBox)"
+echo "[+] Konfigurasi Host-Only Network"
 
 IFACE="enp0s3"
-IPADDR="192.168.100.1/24"
 
 ip link set $IFACE up
 ip addr flush dev $IFACE
-ip addr add $IPADDR dev $IFACE
+ip addr add 192.168.100.1/24 dev $IFACE
 
 grep -q "$IFACE" /etc/network/interfaces || cat <<EOF >> /etc/network/interfaces
 
@@ -110,12 +109,24 @@ iface $IFACE inet static
 EOF
 
 echo
+echo "[+] Konfigurasi DNS (/etc/resolv.conf)"
+
+chattr -i /etc/resolv.conf 2>/dev/null || true
+cat <<EOF >/etc/resolv.conf
+nameserver 192.168.100.1
+nameserver 8.8.8.8
+search $DOMAIN
+EOF
+chattr +i /etc/resolv.conf
+
+echo
 echo "======================================"
 echo " INSTALLASI SELESAI"
 echo " DOMAIN   : $DOMAIN"
 echo " WEBMAIL  : http://192.168.100.1"
 echo " SMTP     : telnet mail.$DOMAIN 25"
 echo " POP3     : telnet mail.$DOMAIN 110"
+echo " DNS      : 8.8.8.8 / 1.1.1.1 (LOCKED)"
 echo " USER     : tamu"
 echo " PASS     : tamu"
 echo "======================================"
