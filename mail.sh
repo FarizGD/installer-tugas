@@ -8,7 +8,7 @@ fi
 
 clear
 echo "======================================"
-echo " DEBIAN 10 MAIL SERVER INSTALLER BY FarizGD"
+echo " DEBIAN 10 MAIL SERVER INSTALLER - By FarizGD"
 echo "======================================"
 echo
 echo "MASUKKAN DEBIAN 10 CD/DVD 1"
@@ -44,7 +44,7 @@ apt update
 echo "[+] Install paket mail & webmail"
 DEBIAN_FRONTEND=noninteractive apt install -y \
 postfix dovecot-core dovecot-pop3d \
-apache2 php php-imap php-mbstring curl unzip telnet
+apache2 php php-imap php-mbstring curl unzip telnet iproute2
 
 echo "[+] Konfigurasi Postfix"
 postconf -e "myhostname = mail.$DOMAIN"
@@ -92,10 +92,28 @@ mkdir -p /home/tamu/Maildir
 chown -R tamu:tamu /home/tamu/Maildir
 
 echo
+echo "[+] Konfigurasi Host-Only Network (VirtualBox)"
+
+IFACE="enp0s3"
+IPADDR="192.168.100.1/24"
+
+ip link set $IFACE up
+ip addr flush dev $IFACE
+ip addr add $IPADDR dev $IFACE
+
+grep -q "$IFACE" /etc/network/interfaces || cat <<EOF >> /etc/network/interfaces
+
+auto $IFACE
+iface $IFACE inet static
+  address 192.168.100.1
+  netmask 255.255.255.0
+EOF
+
+echo
 echo "======================================"
 echo " INSTALLASI SELESAI"
 echo " DOMAIN   : $DOMAIN"
-echo " WEBMAIL  : http://$DOMAIN"
+echo " WEBMAIL  : http://192.168.100.1"
 echo " SMTP     : telnet mail.$DOMAIN 25"
 echo " POP3     : telnet mail.$DOMAIN 110"
 echo " USER     : tamu"
