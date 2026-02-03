@@ -8,7 +8,7 @@ fi
 
 clear
 echo "======================================"
-echo " DEBIAN 10 MAIL SERVER INSTALLER"
+echo " DEBIAN 10 MAIL SERVER INSTALLER - by FarizGD"
 echo "======================================"
 echo
 echo "MASUKKAN DEBIAN 10 CD/DVD 1"
