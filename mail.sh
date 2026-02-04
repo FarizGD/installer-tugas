@@ -1,50 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
-if [ "$EUID" -ne 0 ]; then
+if [[ $EUID -ne 0 ]]; then
   echo "Jalankan sebagai root."
   exit 1
 fi
 
 clear
 echo "======================================"
-echo " DEBIAN 10 MAIL SERVER INSTALLER - by FarizGD"
+echo " DEBIAN 10 MAIL SERVER INSTALLER"
 echo "======================================"
 echo
+
 echo "MASUKKAN DEBIAN 10 CD/DVD 1"
-echo "Lalu tekan ENTER..."
-read
+read -rp "Tekan ENTER setelah CD 1 terpasang..." </dev/tty
 apt-cdrom add
 
 echo
 echo "MASUKKAN DEBIAN 10 CD/DVD 2"
-echo "Lalu tekan ENTER..."
-read
+read -rp "Tekan ENTER setelah CD 2 terpasang..." </dev/tty
 apt-cdrom add
 
-echo "[+] CD-ROM berhasil ditambahkan"
-
 echo
-echo "Masukkan nama domain (contoh: fariz.com)"
-read DOMAIN
+read -rp "Masukkan nama domain (contoh: fariz.com): " DOMAIN </dev/tty
 
-if [ -z "$DOMAIN" ]; then
-  echo "Domain kosong. Konfigurasi nol nilai."
+if [[ -z "$DOMAIN" ]]; then
+  echo "Domain kosong. Instalasi dibatalkan."
   exit 1
 fi
 
-HOSTIP="127.0.0.1"
-
-echo "[+] Set /etc/hosts"
-grep -q "$DOMAIN" /etc/hosts || echo "$HOSTIP $DOMAIN mail.$DOMAIN" >> /etc/hosts
+echo "[+] Menyiapkan /etc/hosts"
+grep -q "$DOMAIN" /etc/hosts || echo "127.0.0.1 $DOMAIN mail.$DOMAIN" >> /etc/hosts
 
 echo "[+] apt update"
 apt update
 
-echo "[+] Install paket"
+echo "[+] Install paket mail + webmail"
 DEBIAN_FRONTEND=noninteractive apt install -y \
 postfix dovecot-core dovecot-pop3d \
-apache2 php php-imap php-mbstring curl unzip telnet iproute2
+apache2 php php-imap php-mbstring \
+curl unzip telnet iproute2 e2fsprogs
 
 echo "[+] Konfigurasi Postfix"
 postconf -e "myhostname = mail.$DOMAIN"
@@ -74,7 +69,6 @@ cat <<EOF >/etc/apache2/sites-available/squirrelmail.conf
   ServerName $DOMAIN
   ServerAlias mail.$DOMAIN
   DocumentRoot /var/www/html/squirrelmail
-
   <Directory /var/www/html/squirrelmail>
     AllowOverride All
     Require all granted
@@ -85,20 +79,19 @@ EOF
 a2ensite squirrelmail
 systemctl reload apache2
 
-echo "[+] Buat user mail"
+echo "[+] Membuat user mail"
 id tamu &>/dev/null || useradd -m tamu
 echo "tamu:tamu" | chpasswd
 mkdir -p /home/tamu/Maildir
 chown -R tamu:tamu /home/tamu/Maildir
 
-echo
-echo "[+] Konfigurasi Host-Only Network"
+echo "[+] Konfigurasi Host-Only Network (VirtualBox)"
 
 IFACE="enp0s3"
 
-ip link set $IFACE up
-ip addr flush dev $IFACE
-ip addr add 192.168.100.1/24 dev $IFACE
+ip link set "$IFACE" up
+ip addr flush dev "$IFACE"
+ip addr add 192.168.100.1/24 dev "$IFACE"
 
 grep -q "$IFACE" /etc/network/interfaces || cat <<EOF >> /etc/network/interfaces
 
@@ -108,25 +101,23 @@ iface $IFACE inet static
   netmask 255.255.255.0
 EOF
 
-echo
-echo "[+] Konfigurasi DNS (/etc/resolv.conf)"
+echo "[+] Konfigurasi DNS"
 
 chattr -i /etc/resolv.conf 2>/dev/null || true
 cat <<EOF >/etc/resolv.conf
-nameserver 192.168.100.1
 nameserver 8.8.8.8
+nameserver 1.1.1.1
 search $DOMAIN
 EOF
 chattr +i /etc/resolv.conf
 
 echo
 echo "======================================"
-echo " INSTALLASI SELESAI"
+echo " INSTALLASI SELESAI - SUKSES"
 echo " DOMAIN   : $DOMAIN"
 echo " WEBMAIL  : http://192.168.100.1"
 echo " SMTP     : telnet mail.$DOMAIN 25"
 echo " POP3     : telnet mail.$DOMAIN 110"
-echo " DNS      : 8.8.8.8 / 1.1.1.1 (LOCKED)"
 echo " USER     : tamu"
 echo " PASS     : tamu"
 echo "======================================"
