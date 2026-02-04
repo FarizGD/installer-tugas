@@ -1,157 +1,100 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
+echo "[+] Installer by FarizGD"
+echo "[*] Mail Server Installer Debian 10 (Non-Interactive)"
+sleep 3
+### VARIABLES
+HOSTNAME=$(hostname)
+DOMAIN="${HOSTNAME}.com"
+IP_HOSTONLY="192.168.100.1"
+NETMASK="/24"
+INTERFACE="enp0s3"
 
-# ===============================
-# KONFIGURASI DASAR
-# ===============================
-CONF_DIR="/etc/mailserver"
-CONF_FILE="$CONF_DIR/domain.conf"
-
-MAIL_USER="tamu"
-MAIL_PASS="tamu"
-
-IFACE="enp0s3"
-HOST_IP="192.168.100.1"
-NETMASK="255.255.255.0"
-
-# ===============================
-# ROOT CHECK
-# ===============================
-if [[ $EUID -ne 0 ]]; then
-  echo "Jalankan sebagai root."
-  exit 1
-fi
-
-# ===============================
-# SET DOMAIN DARI HOSTNAME
-# ===============================
-mkdir -p "$CONF_DIR"
-
-if [[ ! -f "$CONF_FILE" ]]; then
-  HOSTNAME_SYS="$(hostname -s)"
-  echo "DOMAIN=${HOSTNAME_SYS}.com" > "$CONF_FILE"
-fi
-
-source "$CONF_FILE"
-DOMAIN="$DOMAIN"
-
-echo "[+] Domain aktif: $DOMAIN"
-
-# ===============================
-# SET DEBIAN 10 REPOSITORY
-# ===============================
-echo "[+] Mengatur Debian 10 archive repository"
-
-cat <<EOF >/etc/apt/sources.list
+### FIX REPO DEBIAN 10 (ARCHIVE)
+cat > /etc/apt/sources.list <<EOF
 deb http://archive.debian.org/debian buster main contrib non-free
 deb http://archive.debian.org/debian-security buster/updates main contrib non-free
 EOF
 
-cat <<EOF >/etc/apt/apt.conf.d/99no-check-valid-until
-Acquire::Check-Valid-Until "false";
-EOF
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid
 
 apt update
 
-
-# ===============================
-# INSTALL PAKET
-# ===============================
+### INSTALL PACKAGES
 DEBIAN_FRONTEND=noninteractive apt install -y \
-postfix dovecot-core dovecot-pop3d \
-apache2 php php-imap php-mbstring \
-curl unzip telnet iproute2 e2fsprogs
+postfix \
+dovecot-pop3d \
+dovecot-imapd \
+telnet \
+apache2 \
+php \
+php-mbstring \
+php-imap \
+wget \
+tar
 
-# ===============================
-# HOSTS
-# ===============================
-grep -q "$DOMAIN" /etc/hosts || \
-echo "127.0.0.1 $DOMAIN mail.$DOMAIN" >> /etc/hosts
+### HOSTS
+grep -q "$DOMAIN" /etc/hosts || echo "127.0.0.1 $DOMAIN" >> /etc/hosts
 
-# ===============================
-# POSTFIX
-# ===============================
-postconf -e "myhostname = mail.$DOMAIN"
+### POSTFIX CONFIG
+postconf -e "myhostname = $DOMAIN"
 postconf -e "mydomain = $DOMAIN"
+postconf -e "myorigin = /etc/mailname"
 postconf -e "inet_interfaces = all"
-postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
 postconf -e "home_mailbox = Maildir/"
+
 echo "$DOMAIN" > /etc/mailname
-systemctl restart postfix
 
-# ===============================
-# DOVECOT (POP3 TELNET)
-# ===============================
-sed -i 's/^#disable_plaintext_auth.*/disable_plaintext_auth = no/' /etc/dovecot/conf.d/10-auth.conf
-sed -i 's|^mail_location.*|mail_location = maildir:~/Maildir|' /etc/dovecot/conf.d/10-mail.conf
-sed -i 's/^#port = 110/port = 110/' /etc/dovecot/conf.d/10-master.conf
-systemctl restart dovecot
+### DOVECOT CONFIG
+sed -i 's|^#mail_location =.*|mail_location = maildir:~/Maildir|' /etc/dovecot/conf.d/10-mail.conf
+sed -i 's|^#disable_plaintext_auth = yes|disable_plaintext_auth = no|' /etc/dovecot/conf.d/10-auth.conf
+sed -i 's|^#listen = \*, ::|listen = *|' /etc/dovecot/dovecot.conf
 
-# ===============================
-# SQUIRRELMAIL
-# ===============================
+### USER MAILDIR
+id tamu &>/dev/null || useradd -m tamu
+echo "tamu:tamu" | chpasswd
+mkdir -p /home/tamu/Maildir
+chown -R tamu:tamu /home/tamu/Maildir
+
+### SQUIRRELMAIL INSTALL
 cd /var/www/html
-curl -fsSL https://downloads.sourceforge.net/project/squirrelmail/stable/1.4.23/squirrelmail-webmail-1.4.23.zip -o squirrelmail.zip
-unzip -q squirrelmail.zip
-mv squirrelmail-webmail-1.4.23 squirrelmail
+wget -q https://github.com/FarizGD/installer-tugas/raw/refs/heads/main/files/squirrelmail-webmail-1.4.22.tar.gz
+tar xzf squirrelmail-webmail-1.4.22.tar.gz
+mv squirrelmail-webmail-1.4.22 squirrelmail
 chown -R www-data:www-data squirrelmail
 
-cat <<EOF >/etc/apache2/sites-available/squirrelmail.conf
-<VirtualHost *:80>
-  ServerName $DOMAIN
-  ServerAlias mail.$DOMAIN
-  DocumentRoot /var/www/html/squirrelmail
-  <Directory /var/www/html/squirrelmail>
-    AllowOverride All
-    Require all granted
-  </Directory>
-</VirtualHost>
+### APACHE
+systemctl restart apache2
+
+### NETWORK (HOST-ONLY)
+cat > /etc/network/interfaces.d/hostonly <<EOF
+auto $INTERFACE
+iface $INTERFACE inet static
+ address $IP_HOSTONLY
+ netmask 255.255.255.0
 EOF
 
-a2ensite squirrelmail
-systemctl reload apache2
-
-# ===============================
-# USER MAIL
-# ===============================
-id "$MAIL_USER" &>/dev/null || useradd -m "$MAIL_USER"
-echo "$MAIL_USER:$MAIL_PASS" | chpasswd
-mkdir -p /home/$MAIL_USER/Maildir
-chown -R $MAIL_USER:$MAIL_USER /home/$MAIL_USER/Maildir
-
-# ===============================
-# HOST-ONLY NETWORK
-# ===============================
-ip link set "$IFACE" up
-ip addr flush dev "$IFACE"
-ip addr add $HOST_IP/24 dev "$IFACE"
-
-grep -q "$IFACE" /etc/network/interfaces || cat <<EOF >> /etc/network/interfaces
-
-auto $IFACE
-iface $IFACE inet static
-  address $HOST_IP
-  netmask $NETMASK
-EOF
-
-# ===============================
-# DNS
-# ===============================
-chattr -i /etc/resolv.conf 2>/dev/null || true
-cat <<EOF >/etc/resolv.conf
+### RESOLV.CONF
+cat > /etc/resolv.conf <<EOF
 nameserver 8.8.8.8
 nameserver 1.1.1.1
-search $DOMAIN
 EOF
-chattr +i /etc/resolv.conf
 
-echo "======================================"
-echo " INSTALLASI SELESAI"
-echo " DOMAIN        : $DOMAIN"
-echo " EDIT DOMAIN   : $CONF_FILE"
-echo " WEBMAIL       : http://$HOST_IP"
-echo " SMTP          : telnet mail.$DOMAIN 25"
-echo " POP3          : telnet mail.$DOMAIN 110"
-echo " USER          : $MAIL_USER"
-echo " PASS          : $MAIL_PASS"
-echo "======================================"
+### RESTART SERVICES
+systemctl restart postfix
+systemctl restart dovecot
+systemctl restart networking
+
+echo "================================="
+echo " INSTALLATION COMPLETE"
+echo " Domain      : $DOMAIN"
+echo " Webmail     : http://$DOMAIN/squirrelmail"
+echo " POP3        : telnet $DOMAIN 110"
+echo " User        : tamu"
+echo " Password    : tamu"
+echo ""
+echo " Untuk ganti domain:"
+echo " - /etc/hosts"
+echo " - /etc/mailname"
+echo " - postfix: myhostname"
+echo "================================="
