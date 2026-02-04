@@ -66,14 +66,6 @@ chown -R www-data:www-data squirrelmail
 ### APACHE
 systemctl restart apache2
 
-### NETWORK (HOST-ONLY)
-cat > /etc/network/interfaces.d/hostonly <<EOF
-auto $INTERFACE
-iface $INTERFACE inet static
- address $IP_HOSTONLY
- netmask 255.255.255.0
-EOF
-
 ### RESOLV.CONF
 cat > /etc/resolv.conf <<EOF
 nameserver 8.8.8.8
